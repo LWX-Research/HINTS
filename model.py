@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 from config import *
-from model_util import *
+from model_util import QuaternionLinear, qsvd_reconstruction
 
 class HINTS(nn.Module):
     def __init__(self, dropout: float = 0.0):
@@ -55,7 +55,7 @@ class HINTS(nn.Module):
             nn.Linear(self.dim // 2, 1)
         )
     
-    def update_prototypes(self, features, mod, moto=0.9):
+    def HPA(self, features, mod, moto=0.9):
         shared_query = self.prototypes['share'].unsqueeze(0)  # [1, N_shared, D]
         modality_query = self.prototypes[mod].unsqueeze(0)    # [1, N_mod, D]
         key = value = features  # [B, S, D]
@@ -119,7 +119,7 @@ class HINTS(nn.Module):
             x = x.view(batch_size, self.nodes_num, -1)
             return F.relu(x)
 
-    def attention(self, features):
+    def SQC(self, features):
         query = torch.mean(features, dim=-1)
         query = self.linear_q(query)  
         features=self.q_linear(features.unsqueeze(1))
@@ -147,7 +147,7 @@ class HINTS(nn.Module):
             
             encoded[mod] = torch.cat([original_view, encoded_feat], dim=2)
 
-        results = [self.update_prototypes(encoded[mod], mod) for mod in self.modalities]
+        results = [self.HPA(encoded[mod], mod) for mod in self.modalities]
         t1_shared, t1_mod = results[0]
         t1c_shared, t1c_mod = results[1]
         t2_shared, t2_mod = results[2]
@@ -160,7 +160,7 @@ class HINTS(nn.Module):
             distinct
             ],dim=1)
         
-        share_quaternion=self.attention(
+        share_quaternion=self.SQC(
             torch.cat([
                 torch.zeros_like(features[:,:,0].unsqueeze(-1)),
                 features
@@ -172,3 +172,53 @@ class HINTS(nn.Module):
         self.update_all_prototypes()
         
         return pred, share_feature, distinct
+
+    def initialize_prototypes(self, data_loader, num_batches=1):
+            from sklearn.cluster import KMeans
+            import numpy as np
+            
+            device = next(self.parameters()).device
+            
+            all_features = {mod: [] for mod in self.modalities}
+            shared_features = []
+            
+            self.eval()
+            with torch.no_grad():
+                for i, batch in enumerate(data_loader):
+                    batch = batch.to(device)
+                    for mod in self.modalities:
+                        original_feat = getattr(batch, f'{mod}_x').view(-1, self.nodes_num, in_channels)    
+                        encoded_feat = self.encode_modality(
+                            getattr(batch, f'{mod}_x'),
+                            getattr(batch, f'{mod}_edge_index'),
+                            mod
+                        )
+                        combined_feat = torch.cat([original_feat, encoded_feat], dim=2)
+                        all_features[mod].append(combined_feat.reshape(-1, self.dim).cpu().numpy())  # [N, D]
+                        shared_features.append(combined_feat.reshape(-1, self.dim).cpu().numpy())  # [N, D]
+            
+            for mod in self.modalities:
+                all_features[mod] = np.concatenate(all_features[mod], axis=0)
+                
+            shared_features = np.concatenate(shared_features, axis=0)  # [3*N, D]
+            for mod in self.modalities:
+                kmeans = KMeans(
+                    n_clusters=num_prototypes, 
+                    random_state=seed,
+                    n_init=20, 
+                    max_iter=300,
+                    init='k-means++' 
+                )
+                kmeans.fit(all_features[mod])
+                self.prototypes[mod].data = torch.from_numpy(kmeans.cluster_centers_).float().to(device)
+            
+            kmeans = KMeans(
+                n_clusters=num_prototypes, 
+                random_state=seed,
+                n_init=20,  
+                max_iter=300,
+                init='k-means++'
+            )
+            kmeans.fit(shared_features)
+            self.prototypes['share'].data = torch.from_numpy(kmeans.cluster_centers_).float().to(device)
+            self.train()
