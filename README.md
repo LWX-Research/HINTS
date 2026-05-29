@@ -30,7 +30,14 @@ pip install -r requirements.txt
 
 ## Quick Start
 
-### 1. Convert raw data to unified format
+### 1. Download dataset
+
+```bash
+pip install modelscope
+modelscope download --dataset wxl6519/BraTS2020
+```
+
+### 2. Convert raw data to unified format
 
 Supported sources: BraTS NIfTI, NPC NIfTI, NPC NPY.
 
@@ -58,7 +65,7 @@ unified_root/
     mask.npy          # (D,H,W) bool — tumor ROI
 ```
 
-### 2. Train
+### 3. Train
 
 Online mode (build graphs on-the-fly from unified format, recommended):
 
@@ -82,97 +89,13 @@ HINTS_PREPROCESS_OUTPUT_DIR=/path/to/Hints-3D-BraTS \
   python -m hints.cli train --epochs 50 --batch-size 4
 ```
 
-### 3. Evaluate
+### 4. Evaluate
 
 ```bash
 python -m hints.cli eval --fold 1 \
   --unified-dir /path/to/unified-brats \
   --pretrained-path /path/to/checkpoint.pth
 ```
-
-## CLI Reference
-
-```
-python -m hints.cli {command} [options]
-```
-
-| Command | Description |
-|---------|-------------|
-| `convert` | Convert raw dataset → unified canonical format |
-| `train` | Run K-fold cross-validation training |
-| `eval` | Evaluate a single fold with pretrained weights |
-| `preprocess-3d` | Offline 3D graph preprocessing (cache .pt files) |
-
-### `convert`
-
-| Option | Description |
-|--------|-------------|
-| `--raw-dir` | Raw dataset directory (BraTS NIfTI / NPC NIfTI / NPC NPY) |
-| `--output-dir` | Output unified directory |
-| `--source-type` | `npc_nifti` / `npc_npy` / `brats` (auto-detected if omitted) |
-| `--case-id` | Convert a single case |
-| `--max-cases` | Limit number of cases |
-
-### `train` / `eval`
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--epochs` | 50 | Training epochs |
-| `--batch-size` | 4 | Batch size |
-| `--num-workers` | 4 | DataLoader workers |
-| `--k-fold` | 5 | K-fold splits |
-| `--eval-interval` | 10 | Evaluate every N epochs |
-| `--unified-dir` | — | Unified format directory (online mode) |
-| `--preprocess-output-dir` | — | Precomputed graphs directory (offline mode) |
-| `--pretrained-path` | — | Path to pretrained checkpoint |
-| `--num-nodes` | 128 | Graph node capacity |
-| `--n-segments` | 200 | Target supervoxel count |
-| `--hidden-dim` | 32 | GCN hidden dimension |
-| `--lr` | 0.01 | Learning rate (SGD) |
-| `--contra-weight` | 1.0 | Contrastive loss weight |
-| `--graph-build-mode` | auto | `offline` / `online` / `auto` |
-| `--seed` | 111111 | Random seed |
-
-### `preprocess-3d`
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--unified-dir` | (required) | Input unified format directory |
-| `--output-dir` | (required) | Output directory for .pt graphs |
-| `--n-segments` | 200 | Target supervoxel count |
-| `--num-nodes` | n_segments | Graph node capacity |
-| `--roi-margin` | 5 | ROI bounding box margin (voxels) |
-| `--compactness` | 0.1 | SLIC compactness |
-| `--sigma` | 1.0 | SLIC sigma |
-| `--overwrite` | false | Overwrite existing graphs |
-
-## Environment Variables
-
-All settings are overridable via environment variables (priority: CLI args > env vars > defaults).
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HINTS_UNIFIED_DIR` | — | Unified format directory |
-| `HINTS_PREPROCESS_OUTPUT_DIR` | `../dataset/Hints-3D-BraTS` | Offline graph output |
-| `HINTS_EPOCHS` | 50 | Training epochs |
-| `HINTS_BATCH_SIZE` | 4 | Batch size |
-| `HINTS_NUM_WORKERS` | 4 | DataLoader workers |
-| `HINTS_K_FOLD` | 5 | K-fold splits |
-| `HINTS_SEED` | 111111 | Random seed |
-| `HINTS_LR` | 0.01 | Learning rate |
-| `HINTS_N_SEGMENTS` | 200 | Supervoxel target count |
-| `HINTS_NUM_NODES` | 128 | Graph node capacity |
-| `HINTS_NUM_PROTOTYPES` | 3 | Prototypes per modality |
-| `HINTS_CONTRA_WEIGHT` | 1.0 | Contrastive loss weight |
-| `HINTS_HIDDEN_DIM` | 32 | GCN hidden dimension |
-| `HINTS_ROI_MARGIN` | 5 | ROI margin (voxels) |
-| `HINTS_SLIC_COMPACTNESS` | 0.1 | SLIC compactness |
-| `HINTS_SLIC_SIGMA` | 1.0 | SLIC sigma |
-| `HINTS_GRAPH_BUILD_MODE` | auto | `offline` / `online` / `auto` |
-| `HINTS_EVAL_INTERVAL` | 10 | Evaluate every N epochs |
-| `HINTS_PRETRAINED_PATH` | — | Pretrained weights path |
-| `HINTS_TAU` | 0.01 | Contrastive JSD temperature |
-| `HINTS_ETA_MIN` | 0.1 | LR scheduler min ratio |
 
 ## Model Architecture
 
@@ -190,15 +113,6 @@ MultiModalGCN
 **Loss**: `total = Cox PH loss + λ₁·L1_reg + contra_weight · Contrastive JSD loss`
 
 **Metrics**: Concordance Index (C-index), Time-dependent AUC
-
-## Tuning Guide
-
-Recommended sweep order for improving performance:
-
-1. **Supervoxel parameters**: `HINTS_N_SEGMENTS` → `HINTS_NUM_NODES` → `HINTS_SLIC_COMPACTNESS` → `HINTS_SLIC_SIGMA` → `HINTS_ROI_MARGIN`
-2. **Training hyperparams**: `lr` → `batch_size` → `contra_weight` → `num_prototypes`
-
-Change 1–2 parameters at a time; record Val CI, Val AUC, node statistics, and GPU memory.
 
 ## License
 
