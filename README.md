@@ -2,10 +2,6 @@
 
 Hierarchically Disentangling Subregional Heterogeneity with Structural Priors, applied to 3D brain tumor MRI (BraTS, NPC) for survival prediction.
 
-## Overview
-
-HINTS builds **modality-specific graphs** from 3D supervoxel regions within the tumor ROI, then learns via a **prototype-based disentanglement** that separates shared and modality-specific features. A **quaternion fusion** with QSVD captures high-order interactions across modalities before final survival prediction.
-
 ### Pipeline
 
 ```
@@ -14,11 +10,6 @@ HINTS builds **modality-specific graphs** from 3D supervoxel regions within the 
     → SurvivalPredictionHead → risk score
 ```
 
-Key design choices:
-- All three modalities share the same supervoxel topology (single SLIC run on stacked volumes)
-- 6-dimensional node features: `(cz, cy, cx, voxel_count, mean, std)`
-- 6-neighborhood edges (Z, Y, X axes)
-- Contrastive JSD loss pushes shared and modality-specific features apart
 
 ## Installation
 
